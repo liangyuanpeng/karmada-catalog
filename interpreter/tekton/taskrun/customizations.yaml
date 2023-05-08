@@ -1,0 +1,77 @@
+apiVersion: config.karmada.io/v1alpha1
+kind: ResourceInterpreterCustomization
+metadata:
+  name: taskrun
+spec:
+  target:
+    apiVersion: tekton.dev/v1
+    kind: TaskRun
+  customizations:
+    replicaResource:
+      luaScript: >
+        local kube = require("kube")
+        function GetReplicas(obj)
+          replica = 1
+          requirement = kube.accuratePodRequirements(obj.spec)
+          return replica, requirement
+        end
+    retention:
+      luaScript: >
+        function Retain(desiredObj, observedObj)
+          return desiredObj
+        end
+    replicaRevision:
+      luaScript: >
+        function ReviseReplica(obj, desiredReplica)
+          return obj
+        end
+    statusAggregation:
+      luaScript: >
+        function AggregateStatus(desiredObj, statusItems)
+          if statusItems == nil then
+            return desiredObj
+          end
+          if desiredObj.status == nil then
+            desiredObj.status = {}
+          end
+          if desiredObj.metadata.generation == nil then
+            desiredObj.metadata.generation = 0
+          end
+        
+          startTime = ''
+          completionTime = ''
+          conditions={}
+        
+          for i = 1, #statusItems do
+            if statusItems[i].status ~= nil and statusItems[i].status.startTime ~= nil then
+              startTime = statusItems[i].status.startTime
+            end
+            if statusItems[i].status ~= nil and statusItems[i].status.completionTime ~= nil then
+              completionTime = statusItems[i].status.completionTime
+            end
+            
+            if statusItems[i].status ~= nil and statusItems[i].status.conditions ~= nil then
+              conditions=statusItems[i].status.conditions
+            end
+        
+          end
+        
+          desiredObj.status.startTime=startTime
+          desiredObj.status.completionTime=completionTime
+          desiredObj.status.conditions = conditions
+          return desiredObj
+        end
+    statusReflection:
+      luaScript: >
+        function ReflectStatus (observedObj)
+          status = {}
+          status.startTime=observedObj.status.startTime
+          status.completionTime=observedObj.status.completionTime
+          status.conditions=observedObj.status.conditions
+          return status
+        end
+    healthInterpretation:
+      luaScript: >
+        function InterpretHealth(observedObj)
+          return true
+        end
